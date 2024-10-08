@@ -16,6 +16,8 @@ const inRoom = ref(false)
 
 let socket: WebSocket
 
+const isConnected = ref(false)
+
 // Update roomID when it changes and update URL
 watch(roomID, (newVal) => {
   if (newVal) {
@@ -66,6 +68,7 @@ function joinRoom() {
 
   socket.onopen = () => {
     console.log('Connected to server') // eslint-disable-line no-console
+    isConnected.value = true
     newCategory()
   }
 
@@ -95,10 +98,17 @@ function joinRoom() {
 
   socket.onclose = (event) => {
     console.log(`WebSocket is closed now. Code: ${event.code}`) // eslint-disable-line no-console
+    isConnected.value = false
   }
 
   socket.onerror = (error) => {
     console.log(`WebSocket Error: ${error}`) // eslint-disable-line no-console
+  }
+}
+
+function reconnect() {
+  if (!isConnected.value) {
+    joinRoom()
   }
 }
 
@@ -234,6 +244,13 @@ function copyRoomID() {
           </button>
         </div>
       </div>
+
+      <!-- <div v-if="inRoom && !isConnected" class="text-center mt-4">
+        <p class="text-red-500">Disconnected from server</p>
+        <button @click="reconnect" class="btn mt-2">
+          Reconnect
+        </button>
+      </div> -->
     </div>
   </div>
 </template>
