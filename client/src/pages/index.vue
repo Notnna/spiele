@@ -106,11 +106,11 @@ function joinRoom() {
   }
 }
 
-function reconnect() {
-  if (!isConnected.value) {
-    joinRoom()
-  }
-}
+// function reconnect() {
+//   if (!isConnected.value) {
+//     joinRoom()
+//   }
+// }
 
 function handleSubmit() {
   streak.value = Math.min(streak.value + 1, 5)
