@@ -11,7 +11,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: "keksiqc/associationsspiel"
+  IMAGE_NAME: "keksiqc/assoziationsspiel"
 
 jobs:
   build-and-push:
