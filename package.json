@@ -1,0 +1,9 @@
+{
+  "name": "assoziationsspiel",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {},
+  "author": "keksiqc",
+  "packageManager": "pnpm@9.12.1"
+}
