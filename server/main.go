@@ -1,9 +1,13 @@
 package main
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/cors"
@@ -24,11 +28,17 @@ type Room struct {
 type BroadcastMessage struct {
     message []byte
     sender  *websocket.Conn
+    msgType string
+}
+
+type Categories struct {
+	Categories []string `json:"categories"`
 }
 
 type Server struct {
-    rooms map[string]*Room
-    mu    sync.Mutex
+	rooms      map[string]*Room
+	mu         sync.Mutex
+	categories []string
 }
 
 var upgrader = websocket.Upgrader{
@@ -40,9 +50,31 @@ var upgrader = websocket.Upgrader{
 }
 
 func NewServer() *Server {
-    return &Server{
-        rooms: make(map[string]*Room),
-    }
+	server := &Server{
+		rooms: make(map[string]*Room),
+	}
+	server.loadCategories()
+	return server
+}
+
+func (s *Server) loadCategories() {
+	data, err := ioutil.ReadFile("./data/categories.json")
+	if err != nil {
+		log.Fatalf("Error reading categories file: %v", err)
+	}
+
+	var categories Categories
+	err = json.Unmarshal(data, &categories)
+	if err != nil {
+		log.Fatalf("Error unmarshalling categories: %v", err)
+	}
+
+	s.categories = categories.Categories
+	log.Printf("Loaded %d categories", len(s.categories))
+}
+
+func (s *Server) getRandomCategory() string {
+	return s.categories[rand.Intn(len(s.categories))]
 }
 
 func NewRoom() *Room {
@@ -107,7 +139,31 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
             room.unregister <- conn
             break
         }
-        room.broadcast <- BroadcastMessage{message: message, sender: conn}
+        var msg map[string]interface{}
+        if err := json.Unmarshal(message, &msg); err != nil {
+            log.Printf("Error unmarshalling message: %v", err)
+            continue
+        }
+
+        switch msg["type"] {
+        case "newCategory":
+            newCategory := s.getRandomCategory()
+            newCategoryMsg, err := json.Marshal(map[string]interface{}{
+                "type":  "newCategory",
+                "value": newCategory,
+            })
+            if err != nil {
+                log.Printf("Error marshalling new category message: %v", err)
+                continue
+            }
+            room.broadcast <- BroadcastMessage{
+                message: newCategoryMsg,
+                sender: conn,
+                msgType: "newCategory",
+            }
+        default:
+            room.broadcast <- BroadcastMessage{message: message, sender: conn, msgType: msg["type"].(string)}
+        }
     }
 }
 
@@ -130,13 +186,15 @@ func (r *Room) run() {
             }
         case broadcastMsg := <-r.broadcast:
             for client := range r.clients {
-                if client != broadcastMsg.sender {
-                    err := client.WriteMessage(websocket.TextMessage, broadcastMsg.message)
-                    if err != nil {
-                        log.Printf("Error broadcasting message: %v", err)
-                        client.Close()
-                        delete(r.clients, client)
-                    }
+                
+                if broadcastMsg.msgType != "newCategory" && client == broadcastMsg.sender {
+                    continue
+                }
+                err := client.WriteMessage(websocket.TextMessage, broadcastMsg.message)
+                if err != nil {
+                    log.Printf("Error broadcasting message: %v", err)
+                    client.Close()
+                    delete(r.clients, client)
                 }
             }
         }
@@ -144,16 +202,17 @@ func (r *Room) run() {
 }
 
 func main() {
-    server := NewServer()
+	rand.Seed(time.Now().UnixNano())
+	server := NewServer()
 
-    corsHandler := cors.Default().Handler(http.HandlerFunc(server.handleConnections))
-    http.Handle("/", http.FileServer(http.Dir("./app/dist")))
+	corsHandler := cors.Default().Handler(http.HandlerFunc(server.handleConnections))
+	http.Handle("/", http.FileServer(http.Dir("./app/dist")))
 
-    http.Handle("/ws", corsHandler)
+	http.Handle("/ws", corsHandler)
 
-    log.Print("WebSocket server starting on 0.0.0.0:8080")
-    err := http.ListenAndServe("0.0.0.0:8080", nil)
-    if err != nil {
-        log.Fatalf("Error starting server: %v", err)
-    }
+	log.Print("WebSocket server starting on 0.0.0.0:8080")
+	err := http.ListenAndServe("0.0.0.0:8080", nil)
+	if err != nil {
+		log.Fatalf("Error starting server: %v", err)
+	}
 }
