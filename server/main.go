@@ -58,7 +58,7 @@ func NewServer() *Server {
 }
 
 func (s *Server) loadCategories() {
-	data, err := ioutil.ReadFile("./data/categories.json")
+	data, err := ioutil.ReadFile("./app/data/categories.json")
 	if err != nil {
 		log.Fatalf("Error reading categories file: %v", err)
 	}
