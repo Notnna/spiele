@@ -201,6 +201,21 @@ func (r *Room) run() {
     }
 }
 
+func (s *Server) cleanupEmptyRooms() {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+
+    for id, room := range s.rooms {
+        if len(room.clients) == 0 {
+            close(room.broadcast)
+            close(room.register)
+            close(room.unregister)
+            delete(s.rooms, id)
+            log.Printf("Cleaned up empty room: %s", id)
+        }
+    }
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	server := NewServer()
@@ -215,4 +230,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
+
+	// Periodically clean up empty rooms
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			server.cleanupEmptyRooms()
+		}
+	}()
 }
