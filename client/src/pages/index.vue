@@ -2,30 +2,6 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-// TODO: move to backend
-const categories = [
-  'Tiere',
-  'Städte',
-  'Länder',
-  'Berufe',
-  'Sportarten',
-  'Farben',
-  'Essen',
-  'Getränke',
-  'Musikinstrumente',
-  'Fahrzeuge',
-  'Pflanzen',
-  'Filme',
-  'Bücher',
-  'Berühmte Personen',
-  'Technologie',
-  'Kleidung',
-  'Möbel',
-  'Werkzeuge',
-  'Hobbys',
-  'Wetterphänomene',
-]
-
 const currentCategory = ref('')
 const player1Input = ref('')
 const player2Input = ref('')
@@ -67,14 +43,8 @@ onMounted(() => {
 })
 
 function newCategory() {
-  currentCategory.value = categories[Math.floor(Math.random() * categories.length)]
-  player1Input.value = ''
-  player2Input.value = ''
-  revealed.value = false
-
   socket.send(JSON.stringify({
     type: 'newCategory',
-    value: currentCategory.value,
   }))
 }
 
@@ -85,7 +55,13 @@ function createRoom() {
 }
 
 function joinRoom() {
-  socket = new WebSocket(`wss://assoziationsspiel.keksi.dev/ws?room=${roomID.value}`)
+  const serverUrl = import.meta.env.VITE_SERVER_URL || 'assoziationsspiel.keksi.dev'
+
+  if (window.location.hostname === 'localhost')
+    socket = new WebSocket(`ws://localhost:8080/ws?room=${roomID.value}`)
+  else
+    socket = new WebSocket(`wss://${serverUrl}/ws?room=${roomID.value}`)
+
   inRoom.value = true
 
   socket.onopen = () => {
