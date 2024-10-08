@@ -21,6 +21,8 @@ FROM scratch AS runner
 COPY --from=builder-server /app/main /app/main
 COPY --from=builder-client /app/dist /app/dist
 
+COPY server/data/categories.json /app/data/categories.json
+
 EXPOSE 8080
 
 ENTRYPOINT ["/app/main"]
