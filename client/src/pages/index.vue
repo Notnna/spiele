@@ -85,7 +85,7 @@ function createRoom() {
 }
 
 function joinRoom() {
-  socket = new WebSocket(`ws://localhost:8080/ws?room=${roomID.value}`)
+  socket = new WebSocket(`wss://assoziationsspiel.keksi.dev/ws?room=${roomID.value}`)
   inRoom.value = true
 
   socket.onopen = () => {
