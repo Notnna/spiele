@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/rs/cors"
 )
 
 const (
@@ -217,13 +216,11 @@ func (s *Server) cleanupEmptyRooms() {
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
 	server := NewServer()
 
-	corsHandler := cors.Default().Handler(http.HandlerFunc(server.handleConnections))
 	http.Handle("/", http.FileServer(http.Dir("./app/dist")))
 
-	http.Handle("/ws", corsHandler)
+	http.Handle("/ws", hserver.handleConnections)
 
 	log.Print("WebSocket server starting on 0.0.0.0:8080")
 	err := http.ListenAndServe("0.0.0.0:8080", nil)
