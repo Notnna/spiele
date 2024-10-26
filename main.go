@@ -24,11 +24,12 @@ const (
 )
 
 type Room struct {
-	clients    map[*websocket.Conn]bool
-	broadcast  chan BroadcastMessage
-	register   chan *websocket.Conn
-	unregister chan *websocket.Conn
-	maxClients int
+	clients        map[*websocket.Conn]bool
+	broadcast      chan BroadcastMessage
+	register       chan *websocket.Conn
+	unregister     chan *websocket.Conn
+	maxClients     int
+	usedCategories []string
 }
 
 type BroadcastMessage struct {
@@ -94,11 +95,12 @@ func (s *Server) getRandomCategory() string {
 
 func NewRoom() *Room {
 	return &Room{
-		clients:    make(map[*websocket.Conn]bool),
-		broadcast:  make(chan BroadcastMessage),
-		register:   make(chan *websocket.Conn),
-		unregister: make(chan *websocket.Conn),
-		maxClients: maxClients,
+		clients:        make(map[*websocket.Conn]bool),
+		broadcast:      make(chan BroadcastMessage),
+		register:       make(chan *websocket.Conn),
+		unregister:     make(chan *websocket.Conn),
+		maxClients:     maxClients,
+		usedCategories: make([]string, 0),
 	}
 }
 
@@ -115,38 +117,12 @@ func (s *Server) getOrCreateRoom(roomID string) (*Room, error) {
 	return room, nil
 }
 
-func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("Error upgrading connection: %v", err)
-		return
-	}
+func (s *Server) handleWebSocket(conn *websocket.Conn, room *Room) {
 	defer conn.Close()
-
-	roomID := r.URL.Query().Get("room")
-	if roomID == "" {
-		log.Println("Error: Room ID is required")
-		return
-	}
-
-	room, err := s.getOrCreateRoom(roomID)
-	if err != nil {
-		log.Printf("Error getting or creating room: %v", err)
-		return
-	}
-
-	// Check if the room is full before registering
-	if len(room.clients) >= room.maxClients {
-		log.Printf("Room %s is full. Connection rejected.", roomID)
-		conn.Close()
-		return
-	}
 
 	// Register the connection to the room
 	room.register <- conn
-	log.Printf("New client connected to room: %s", roomID)
 
-	// Handle messages
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -154,6 +130,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 			room.unregister <- conn
 			break
 		}
+
 		var msg map[string]interface{}
 		if err := json.Unmarshal(message, &msg); err != nil {
 			log.Printf("Error unmarshalling message: %v", err)
@@ -162,7 +139,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		switch msg["type"] {
 		case "newCategory":
-			newCategory := s.getRandomCategory()
+			newCategory := s.getUniqueCategory(room.usedCategories)
 			newCategoryMsg, err := json.Marshal(map[string]interface{}{
 				"type":  "newCategory",
 				"value": newCategory,
@@ -176,10 +153,66 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 				sender:  conn,
 				msgType: "newCategory",
 			}
+			room.usedCategories = append(room.usedCategories, newCategory)
 		default:
 			room.broadcast <- BroadcastMessage{message: message, sender: conn, msgType: msg["type"].(string)}
 		}
 	}
+}
+
+func (s *Server) getUniqueCategory(usedCategories []string) string {
+	if len(usedCategories) == len(s.categories) {
+		usedCategories = make([]string, 0)
+	}
+
+	for {
+		newCategory := s.getRandomCategory()
+		if !contains(usedCategories, newCategory) {
+			return newCategory
+		}
+	}
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, a := range slice {
+		if a == item {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Error upgrading connection: %v", err)
+		return
+	}
+
+	roomID := r.URL.Query().Get("room")
+	if roomID == "" {
+		log.Println("Error: Room ID is required")
+		conn.Close()
+		return
+	}
+
+	room, err := s.getOrCreateRoom(roomID)
+	if err != nil {
+		log.Printf("Error getting or creating room: %v", err)
+		conn.Close()
+		return
+	}
+
+	// Check if the room is full before registering
+	if len(room.clients) >= room.maxClients {
+		log.Printf("Room %s is full. Connection rejected.", roomID)
+		conn.Close()
+		return
+	}
+
+	log.Printf("New client connected to room: %s", roomID)
+	s.handleWebSocket(conn, room)
 }
 
 func (r *Room) run() {
@@ -200,18 +233,21 @@ func (r *Room) run() {
 				log.Printf("Client unregistered. Total clients: %d", len(r.clients))
 			}
 		case broadcastMsg := <-r.broadcast:
-			for client := range r.clients {
+			r.broadcastMessage(broadcastMsg)
+		}
+	}
+}
 
-				if broadcastMsg.msgType != "newCategory" && client == broadcastMsg.sender {
-					continue
-				}
-				err := client.WriteMessage(websocket.TextMessage, broadcastMsg.message)
-				if err != nil {
-					log.Printf("Error broadcasting message: %v", err)
-					client.Close()
-					delete(r.clients, client)
-				}
-			}
+func (r *Room) broadcastMessage(broadcastMsg BroadcastMessage) {
+	for client := range r.clients {
+		if broadcastMsg.msgType != "newCategory" && client == broadcastMsg.sender {
+			continue
+		}
+		err := client.WriteMessage(websocket.TextMessage, broadcastMsg.message)
+		if err != nil {
+			log.Printf("Error broadcasting message: %v", err)
+			client.Close()
+			delete(r.clients, client)
 		}
 	}
 }
@@ -235,8 +271,9 @@ func main() {
 	server := NewServer()
 
 	http.Handle("/", http.FileServer(http.FS(server.distFS)))
+	http.HandleFunc("/ws", server.handleConnections)
 
-	log.Print("WebSocket server starting on 0.0.0.0:8080")
+	log.Print("Server starting on 0.0.0.0:8080")
 	err := http.ListenAndServe("0.0.0.0:8080", nil)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
