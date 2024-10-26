@@ -58,7 +58,7 @@ function createRoom() {
 }
 
 function joinRoom() {
-  const serverUrl = import.meta.env.VITE_SERVER_URL || 'assoziationsspiel.keksi.dev'
+  const serverUrl = import.meta.env.VITE_SERVER_URL || 'spiele.keksi.dev'
 
   if (window.location.hostname === 'localhost')
     socket = new WebSocket(`ws://localhost:8080/ws?room=${roomID.value}`)
