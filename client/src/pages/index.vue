@@ -6,6 +6,7 @@ const currentCategory = ref('')
 const player1Input = ref('')
 const player2Input = ref('')
 const revealed = ref(false)
+const btnRevealed = ref(false)
 const streak = ref(0)
 
 const router = useRouter()
@@ -92,6 +93,10 @@ function joinRoom() {
         player1Input.value = ''
         player2Input.value = ''
         revealed.value = false
+        btnRevealed.value = false
+        break
+      case 'allRevealed':
+        revealed.value = true
         break
     }
   }
@@ -124,7 +129,10 @@ function handleSubmit() {
 }
 
 function handleReveal() {
-  revealed.value = true
+  btnRevealed.value = true
+  socket.send(JSON.stringify({
+    type: 'reveal',
+  }))
 }
 
 function resetStreak() {
@@ -178,6 +186,7 @@ function copyRoomID() {
           Streak: {{ streak }}/5
         </div>
         <input
+          :disabled="revealed"
           v-model="player1Input"
           type="text"
           class="input"
@@ -193,6 +202,7 @@ function copyRoomID() {
         <div class="grid grid-cols-4 gap-4">
           <button
             class="btn"
+            :disabled="btnRevealed"
             @click="handleReveal"
           >
             REVEAL

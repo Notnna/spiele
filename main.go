@@ -30,6 +30,7 @@ type Room struct {
 	unregister     chan *websocket.Conn
 	maxClients     int
 	usedCategories []string
+	revealed       int
 }
 
 type BroadcastMessage struct {
@@ -101,6 +102,7 @@ func NewRoom() *Room {
 		unregister:     make(chan *websocket.Conn),
 		maxClients:     maxClients,
 		usedCategories: make([]string, 0),
+		revealed:       0,
 	}
 }
 
@@ -154,6 +156,23 @@ func (s *Server) handleWebSocket(conn *websocket.Conn, room *Room) {
 				msgType: "newCategory",
 			}
 			room.usedCategories = append(room.usedCategories, newCategory)
+		case "reveal":
+			room.revealed++
+			if room.revealed == len(room.clients) {
+					allRevealedMsg, err := json.Marshal(map[string]interface{}{
+							"type": "allRevealed",
+					})
+					if err != nil {
+							log.Printf("Error marshalling allRevealed message: %v", err)
+							continue
+					}
+					room.broadcast <- BroadcastMessage{
+							message: allRevealedMsg,
+							sender:  conn,
+							msgType: "allRevealed",
+					}
+					room.revealed = 0
+			}
 		default:
 			room.broadcast <- BroadcastMessage{message: message, sender: conn, msgType: msg["type"].(string)}
 		}
@@ -240,7 +259,7 @@ func (r *Room) run() {
 
 func (r *Room) broadcastMessage(broadcastMsg BroadcastMessage) {
 	for client := range r.clients {
-		if broadcastMsg.msgType != "newCategory" && client == broadcastMsg.sender {
+		if broadcastMsg.msgType != "newCategory" && broadcastMsg.msgType != "allRevealed" && client == broadcastMsg.sender {
 			continue
 		}
 		err := client.WriteMessage(websocket.TextMessage, broadcastMsg.message)
