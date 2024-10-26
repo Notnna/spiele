@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"io/fs"
 	"log"
 	"math/rand"
 	"net/http"
@@ -44,6 +45,7 @@ type Server struct {
 	rooms      map[string]*Room
 	mu         sync.Mutex
 	categories []string
+	distFS     fs.FS
 }
 
 var upgrader = websocket.Upgrader{
@@ -59,11 +61,19 @@ func NewServer() *Server {
 		rooms: make(map[string]*Room),
 	}
 	server.loadCategories()
+
+	// Set up the file server during initialization
+	distFS, err := fs.Sub(dist, "client/dist")
+	if err != nil {
+		log.Fatalf("Error creating sub-filesystem: %v", err)
+	}
+	server.distFS = distFS
+
 	return server
 }
 
 func (s *Server) loadCategories() {
-	data, err := data.ReadFile("categories.json")
+	data, err := data.ReadFile("data/categories.json")
 	if err != nil {
 		log.Fatalf("Error reading categories file: %v", err)
 	}
@@ -224,9 +234,7 @@ func (s *Server) cleanupEmptyRooms() {
 func main() {
 	server := NewServer()
 
-	http.Handle("/", http.FileServer(http.FS(dist)))
-
-	http.Handle("/ws", http.HandlerFunc(server.handleConnections))
+	http.Handle("/", http.FileServer(http.FS(server.distFS)))
 
 	log.Print("WebSocket server starting on 0.0.0.0:8080")
 	err := http.ListenAndServe("0.0.0.0:8080", nil)

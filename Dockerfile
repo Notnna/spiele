@@ -5,23 +5,32 @@ WORKDIR /app
 RUN npm install -g pnpm
 
 COPY client/package.json client/pnpm-lock.yaml ./
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 COPY client/ ./
 RUN pnpm run build
 
-FROM golang:1.23.2-alpine AS builder-server
+FROM golang:alpine AS builder
 
 WORKDIR /app
 
-COPY server/ ./
-RUN go build -o main .
+COPY go.mod go.sum ./
+RUN go mod download
+COPY *.go ./
+
+COPY --from=builder-client /app/dist /app/client/dist
+COPY /data/categories.json /app/data/categories.json
+
+RUN apk add --no-cache \
+    ca-certificates \
+    && update-ca-certificates
+
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o main .
 
 FROM scratch AS runner
 
-COPY --from=builder-server /app/main /app/main
-COPY --from=builder-client /app/dist /app/dist
-
-COPY server/data/categories.json /app/data/categories.json
+COPY --from=builder /app/main /app/main
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 EXPOSE 8080
 
