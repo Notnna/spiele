@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -159,19 +160,19 @@ func (s *Server) handleWebSocket(conn *websocket.Conn, room *Room) {
 		case "reveal":
 			room.revealed++
 			if room.revealed == len(room.clients) {
-					allRevealedMsg, err := json.Marshal(map[string]interface{}{
-							"type": "allRevealed",
-					})
-					if err != nil {
-							log.Printf("Error marshalling allRevealed message: %v", err)
-							continue
-					}
-					room.broadcast <- BroadcastMessage{
-							message: allRevealedMsg,
-							sender:  conn,
-							msgType: "allRevealed",
-					}
-					room.revealed = 0
+				allRevealedMsg, err := json.Marshal(map[string]interface{}{
+					"type": "allRevealed",
+				})
+				if err != nil {
+					log.Printf("Error marshalling allRevealed message: %v", err)
+					continue
+				}
+				room.broadcast <- BroadcastMessage{
+					message: allRevealedMsg,
+					sender:  conn,
+					msgType: "allRevealed",
+				}
+				room.revealed = 0
 			}
 		default:
 			room.broadcast <- BroadcastMessage{message: message, sender: conn, msgType: msg["type"].(string)}
@@ -289,7 +290,15 @@ func (s *Server) cleanupEmptyRooms() {
 func main() {
 	server := NewServer()
 
-	http.Handle("/", http.FileServer(http.FS(server.distFS)))
+	fileServer := http.FileServer(http.FS(server.distFS))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		_, err := server.distFS.Open(strings.TrimPrefix(r.URL.Path, "/"))
+		if err != nil {
+			r.URL.Path = "/"
+		}
+		fileServer.ServeHTTP(w, r)
+	})
+
 	http.HandleFunc("/ws", server.handleConnections)
 
 	log.Print("Server starting on 0.0.0.0:8080")
