@@ -1,8 +1,8 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -11,6 +11,12 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+//go:embed client/dist
+var dist embed.FS
+
+//go:embed data
+var data embed.FS
 
 const (
 	maxClients = 2
@@ -57,7 +63,7 @@ func NewServer() *Server {
 }
 
 func (s *Server) loadCategories() {
-	data, err := ioutil.ReadFile("./app/data/categories.json")
+	data, err := data.ReadFile("categories.json")
 	if err != nil {
 		log.Fatalf("Error reading categories file: %v", err)
 	}
@@ -218,9 +224,9 @@ func (s *Server) cleanupEmptyRooms() {
 func main() {
 	server := NewServer()
 
-	http.Handle("/", http.FileServer(http.Dir("./app/dist")))
+	http.Handle("/", http.FileServer(http.FS(dist)))
 
-	http.Handle("/ws", hserver.handleConnections)
+	http.Handle("/ws", http.HandlerFunc(server.handleConnections))
 
 	log.Print("WebSocket server starting on 0.0.0.0:8080")
 	err := http.ListenAndServe("0.0.0.0:8080", nil)
