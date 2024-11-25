@@ -165,6 +165,14 @@ function copyRoomID() {
       </div>
     </div>
 
+    <!-- Donate Button -->
+    <div class="absolute right-0 top-0 p-4">
+      <a href="https://ko-fi.com/keksiqc" target="_blank" class="flex items-center gap-2 px-6 py-3 border-2 border-[#3a3a6a] rounded-xl bg-[#1a1a4a] font-medium transition-all duration-300 hover:scale-105 hover:shadow-[0_0_10px_rgba(255,255,255,0.2)]">
+        <i class="i-carbon-favorite text-lg text-pink-300" />
+        Spenden
+      </a>
+    </div>
+
     <div class="max-w-2xl w-full p-6 space-y-6">
       <h1 class="text-center space-y-1">
         <div class="text-2xl font-light">
@@ -186,8 +194,8 @@ function copyRoomID() {
           Streak: {{ streak }}/5
         </div>
         <input
-          :disabled="revealed"
           v-model="player1Input"
+          :disabled="revealed"
           type="text"
           class="input"
           placeholder="Eingabe"
@@ -264,4 +272,3 @@ function copyRoomID() {
     </div>
   </div>
 </template>
-
