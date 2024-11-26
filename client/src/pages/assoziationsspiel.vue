@@ -165,7 +165,17 @@ function copyRoomID() {
 <template>
   <div class="min-h-screen flex items-center justify-center bg-[#0a0a2a] text-white font-sans">
     <DonateButton />
-    <Toaster position="bottom-right" theme="dark" />
+    <Toaster 
+      position="bottom-right"
+      theme="dark"
+      :toastOptions="{
+        style: {
+          background: '#1a1a4a',
+          border: '2px solid #3a3a6a',
+          color: 'white',
+        },
+      }"
+    />
 
     <div v-if="inRoom" class="absolute left-0 top-0 p-4">
       <div class="relative flex items-center gap-2 border-2 border-[#3a3a6a] rounded-xl bg-[#1a1a4a] p-2">
