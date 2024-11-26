@@ -85,11 +85,15 @@ function joinRoom() {
       case 'reveal':
         revealed.value = true
         break
+      // Right answer
       case 'streak':
         streak.value = data.value
+        toast.success('Richtige Antwort!')
         break
+      // Wrong answer
       case 'resetStreak':
         streak.value = 0
+        toast.error('Falsche Antwort!')
         break
       case 'newCategory':
         currentCategory.value = data.value
@@ -100,6 +104,7 @@ function joinRoom() {
         break
       case 'allRevealed':
         revealed.value = true
+        toast.info('Antwort aufgedeckt')
         break
     }
   }
@@ -135,7 +140,6 @@ function handleSubmit() {
 
 function handleReveal() {
   btnRevealed.value = true
-  toast.info('Antwort aufgedeckt')
   socket.send(JSON.stringify({
     type: 'reveal',
   }))
