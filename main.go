@@ -1,19 +1,19 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"io/fs"
 	"log"
 	"math/rand"
 	"net/http"
-	"strings"
-	"sync"
-	"time"
-	"context"
 	"os"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -71,10 +71,10 @@ type Server struct {
 }
 
 type Metrics struct {
-	activeRooms    int64
-	activeClients  int64
-	messagesTotal  int64
-	errorCount     int64
+	activeRooms   int64
+	activeClients int64
+	messagesTotal int64
+	errorCount    int64
 	mu            sync.Mutex
 }
 
@@ -88,10 +88,10 @@ var upgrader = websocket.Upgrader{
 
 func NewServer(config Config) *Server {
 	server := &Server{
-		rooms:      make(map[string]*Room),
-		config:     config,
-		metrics:    &Metrics{},
-		shutdown:   make(chan struct{}),
+		rooms:    make(map[string]*Room),
+		config:   config,
+		metrics:  &Metrics{},
+		shutdown: make(chan struct{}),
 	}
 	server.loadCategories()
 
@@ -134,7 +134,7 @@ func NewRoom() *Room {
 		usedCategories: make([]string, 0),
 		revealed:       0,
 		lastActivity:   time.Now(),
-		done:          make(chan struct{}),
+		done:           make(chan struct{}),
 	}
 }
 
@@ -153,8 +153,8 @@ func (s *Server) getOrCreateRoom(roomID string) (*Room, error) {
 			usedCategories: make([]string, 0),
 			revealed:       0,
 			lastActivity:   time.Now(),
-			done:          make(chan struct{}),
-			server:        s,
+			done:           make(chan struct{}),
+			server:         s,
 		}
 		s.rooms[roomID] = room
 		s.metrics.mu.Lock()
@@ -328,7 +328,7 @@ func (r *Room) handleUnregister(client *websocket.Conn) {
 		log.Printf("Warning: Attempted to unregister nil client")
 		return
 	}
-	
+
 	if _, ok := r.clients[client]; ok {
 		delete(r.clients, client)
 		client.Close()
@@ -361,7 +361,7 @@ func (r *Room) sendHeartbeat() {
 	heartbeat, _ := json.Marshal(map[string]interface{}{
 		"type": "heartbeat",
 	})
-	
+
 	for client := range r.clients {
 		if client == nil {
 			continue
@@ -395,10 +395,10 @@ func (s *Server) cleanupEmptyRooms() {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	close(s.shutdown)
-	
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	for _, room := range s.rooms {
 		close(room.done)
 		for client := range room.clients {
@@ -422,9 +422,9 @@ func main() {
 		ReadTimeout:     10 * time.Second,
 		WriteTimeout:    10 * time.Second,
 	}
-	
+
 	server := NewServer(config)
-	
+
 	// Setup HTTP server
 	srv := &http.Server{
 		Addr:         "0.0.0.0:" + config.Port,
@@ -434,15 +434,15 @@ func main() {
 
 	// Setup routes
 	mux := http.NewServeMux()
-	
+
 	// Add basic metrics endpoint
 	mux.HandleFunc("/metrics", server.handleMetrics)
-	
+
 	// Add health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	
+
 	// Setup static file server
 	fileServer := http.FileServer(http.FS(server.distFS))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -452,16 +452,16 @@ func main() {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
-	
+
 	mux.HandleFunc("/ws", server.handleConnections)
-	
+
 	srv.Handler = mux
 
 	// Start cleanup goroutine
 	go func() {
 		ticker := time.NewTicker(config.CleanupInterval)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ticker.C:
@@ -495,20 +495,20 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("Error during HTTP server shutdown: %v", err)
 	}
-	
+
 	log.Println("Server stopped gracefully")
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	s.metrics.mu.Lock()
 	defer s.metrics.mu.Unlock()
-	
+
 	metrics := map[string]interface{}{
-		"active_rooms":    s.metrics.activeRooms,
-		"active_clients":  s.metrics.activeClients,
-		"messages_total":  s.metrics.messagesTotal,
-		"error_count":     s.metrics.errorCount,
+		"active_rooms":   s.metrics.activeRooms,
+		"active_clients": s.metrics.activeClients,
+		"messages_total": s.metrics.messagesTotal,
+		"error_count":    s.metrics.errorCount,
 	}
-	
+
 	json.NewEncoder(w).Encode(metrics)
 }
