@@ -25,7 +25,9 @@ function navigateToGame(route: string) {
 
     <div class="relative max-w-3xl w-full p-6 space-y-12">
       <h1 class="text-center space-y-3">
-        <div class="text-2xl font-light tracking-wider text-blue-200/90">Willkommen zu</div>
+        <div class="text-2xl text-blue-200/90 font-light tracking-wider">
+          Willkommen zu
+        </div>
         <div class="from-blue-300 via-purple-300 to-pink-300 bg-gradient-to-r bg-clip-text text-6xl text-transparent font-bold">
           SPIELE.KEKSI.DEV
         </div>
@@ -35,22 +37,28 @@ function navigateToGame(route: string) {
         <div
           v-for="game in games"
           :key="game.title"
-          class="w-full max-w-xl cursor-pointer rounded-3xl bg-[#1a1a4a]/80 backdrop-blur-sm transition-all duration-300 border border-white/[0.08] hover:shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+          class="max-w-xl w-full cursor-pointer border border-white/[0.08] rounded-3xl bg-[#1a1a4a]/80 backdrop-blur-sm transition-all duration-300 hover:shadow-[0_0_10px_rgba(255,255,255,0.2)]"
           @click="navigateToGame(game.route)"
         >
-          <div class="p-8 border-b border-white/[0.08]">
+          <div class="border-b border-white/[0.08] p-8">
             <div class="flex items-center justify-between gap-4">
-              <h2 class="text-3xl font-bold">{{ game.title }}</h2>
-              <span class="text-sm font-medium bg-white/[0.05] px-4 py-1.5 rounded-full border border-white/[0.08] whitespace-nowrap">
+              <h2 class="text-3xl font-bold">
+                {{ game.title }}
+              </h2>
+              <span class="whitespace-nowrap border border-white/[0.08] rounded-full bg-white/[0.05] px-4 py-1.5 text-sm font-medium">
                 {{ game.playerCount }}
               </span>
             </div>
           </div>
-          
+
           <div class="p-8">
             <div class="flex items-center justify-between gap-8">
-              <p class="text-base leading-relaxed text-white/80 text-left">{{ game.description }}</p>
-              <button class="btn-sm shrink-0">Spielen</button>
+              <p class="text-left text-base text-white/80 leading-relaxed">
+                {{ game.description }}
+              </p>
+              <button class="shrink-0 btn-sm">
+                Spielen
+              </button>
             </div>
           </div>
         </div>

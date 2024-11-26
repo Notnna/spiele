@@ -165,10 +165,10 @@ function copyRoomID() {
 <template>
   <div class="min-h-screen flex items-center justify-center bg-[#0a0a2a] text-white font-sans">
     <DonateButton />
-    <Toaster 
+    <Toaster
       position="bottom-right"
       theme="dark"
-      :toastOptions="{
+      :toast-options="{
         style: {
           background: '#1a1a4a',
           border: '2px solid #3a3a6a',
