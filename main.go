@@ -324,6 +324,11 @@ func (r *Room) handleRegister(client *websocket.Conn) {
 }
 
 func (r *Room) handleUnregister(client *websocket.Conn) {
+	if client == nil {
+		log.Printf("Warning: Attempted to unregister nil client")
+		return
+	}
+	
 	if _, ok := r.clients[client]; ok {
 		delete(r.clients, client)
 		client.Close()
@@ -337,6 +342,9 @@ func (r *Room) handleUnregister(client *websocket.Conn) {
 
 func (r *Room) broadcastMessage(broadcastMsg BroadcastMessage) {
 	for client := range r.clients {
+		if client == nil {
+			continue
+		}
 		if broadcastMsg.msgType != "newCategory" && broadcastMsg.msgType != "allRevealed" && client == broadcastMsg.sender {
 			continue
 		}
@@ -355,6 +363,9 @@ func (r *Room) sendHeartbeat() {
 	})
 	
 	for client := range r.clients {
+		if client == nil {
+			continue
+		}
 		err := client.WriteMessage(websocket.PingMessage, heartbeat)
 		if err != nil {
 			r.unregister <- client
