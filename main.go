@@ -10,6 +10,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gorilla/websocket"
 )
@@ -24,6 +28,15 @@ const (
 	maxClients = 2
 )
 
+type Config struct {
+	Port            string        `json:"port"`
+	MaxClients      int           `json:"maxClients"`
+	CleanupInterval time.Duration `json:"cleanupInterval"`
+	RoomTimeout     time.Duration `json:"roomTimeout"`
+	ReadTimeout     time.Duration `json:"readTimeout"`
+	WriteTimeout    time.Duration `json:"writeTimeout"`
+}
+
 type Room struct {
 	clients        map[*websocket.Conn]bool
 	broadcast      chan BroadcastMessage
@@ -32,6 +45,9 @@ type Room struct {
 	maxClients     int
 	usedCategories []string
 	revealed       int
+	lastActivity   time.Time
+	done           chan struct{}
+	server         *Server
 }
 
 type BroadcastMessage struct {
@@ -49,6 +65,17 @@ type Server struct {
 	mu         sync.Mutex
 	categories []string
 	distFS     fs.FS
+	config     Config
+	metrics    *Metrics
+	shutdown   chan struct{}
+}
+
+type Metrics struct {
+	activeRooms    int64
+	activeClients  int64
+	messagesTotal  int64
+	errorCount     int64
+	mu            sync.Mutex
 }
 
 var upgrader = websocket.Upgrader{
@@ -59,13 +86,15 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func NewServer() *Server {
+func NewServer(config Config) *Server {
 	server := &Server{
-		rooms: make(map[string]*Room),
+		rooms:      make(map[string]*Room),
+		config:     config,
+		metrics:    &Metrics{},
+		shutdown:   make(chan struct{}),
 	}
 	server.loadCategories()
 
-	// Set up the file server during initialization
 	distFS, err := fs.Sub(dist, "client/dist")
 	if err != nil {
 		log.Fatalf("Error creating sub-filesystem: %v", err)
@@ -104,6 +133,8 @@ func NewRoom() *Room {
 		maxClients:     maxClients,
 		usedCategories: make([]string, 0),
 		revealed:       0,
+		lastActivity:   time.Now(),
+		done:          make(chan struct{}),
 	}
 }
 
@@ -113,8 +144,22 @@ func (s *Server) getOrCreateRoom(roomID string) (*Room, error) {
 
 	room, ok := s.rooms[roomID]
 	if !ok {
-		room = NewRoom()
+		room = &Room{
+			clients:        make(map[*websocket.Conn]bool),
+			broadcast:      make(chan BroadcastMessage),
+			register:       make(chan *websocket.Conn),
+			unregister:     make(chan *websocket.Conn),
+			maxClients:     s.config.MaxClients,
+			usedCategories: make([]string, 0),
+			revealed:       0,
+			lastActivity:   time.Now(),
+			done:          make(chan struct{}),
+			server:        s,
+		}
 		s.rooms[roomID] = room
+		s.metrics.mu.Lock()
+		s.metrics.activeRooms++
+		s.metrics.mu.Unlock()
 		go room.run()
 	}
 	return room, nil
@@ -206,6 +251,9 @@ func contains(slice []string, item string) bool {
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.errorCount++
+		s.metrics.mu.Unlock()
 		log.Printf("Error upgrading connection: %v", err)
 		return
 	}
@@ -219,13 +267,19 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	room, err := s.getOrCreateRoom(roomID)
 	if err != nil {
+		s.metrics.mu.Lock()
+		s.metrics.errorCount++
+		s.metrics.mu.Unlock()
 		log.Printf("Error getting or creating room: %v", err)
 		conn.Close()
 		return
 	}
 
 	// Check if the room is full before registering
-	if len(room.clients) >= room.maxClients {
+	if len(room.clients) >= s.config.MaxClients {
+		s.metrics.mu.Lock()
+		s.metrics.errorCount++
+		s.metrics.mu.Unlock()
 		log.Printf("Room %s is full. Connection rejected.", roomID)
 		conn.Close()
 		return
@@ -236,25 +290,48 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (r *Room) run() {
+	ticker := time.NewTicker(30 * time.Second) // Heartbeat ticker
+	defer ticker.Stop()
+
 	for {
 		select {
+		case <-r.done:
+			return
 		case client := <-r.register:
-			if len(r.clients) < r.maxClients {
-				r.clients[client] = true
-				log.Printf("Client registered. Total clients: %d", len(r.clients))
-			} else {
-				log.Println("Room is full. Rejecting new client.")
-				client.Close()
-			}
+			r.handleRegister(client)
 		case client := <-r.unregister:
-			if _, ok := r.clients[client]; ok {
-				delete(r.clients, client)
-				client.Close()
-				log.Printf("Client unregistered. Total clients: %d", len(r.clients))
-			}
+			r.handleUnregister(client)
 		case broadcastMsg := <-r.broadcast:
 			r.broadcastMessage(broadcastMsg)
+		case <-ticker.C:
+			r.sendHeartbeat()
 		}
+	}
+}
+
+func (r *Room) handleRegister(client *websocket.Conn) {
+	if len(r.clients) < r.maxClients {
+		r.clients[client] = true
+		r.lastActivity = time.Now()
+		r.server.metrics.mu.Lock()
+		r.server.metrics.activeClients++
+		r.server.metrics.mu.Unlock()
+		log.Printf("Client registered. Total clients: %d", len(r.clients))
+	} else {
+		log.Println("Room is full. Rejecting new client.")
+		client.Close()
+	}
+}
+
+func (r *Room) handleUnregister(client *websocket.Conn) {
+	if _, ok := r.clients[client]; ok {
+		delete(r.clients, client)
+		client.Close()
+		r.lastActivity = time.Now()
+		r.server.metrics.mu.Lock()
+		r.server.metrics.activeClients--
+		r.server.metrics.mu.Unlock()
+		log.Printf("Client unregistered. Total clients: %d", len(r.clients))
 	}
 }
 
@@ -272,46 +349,155 @@ func (r *Room) broadcastMessage(broadcastMsg BroadcastMessage) {
 	}
 }
 
-func (s *Server) cleanupEmptyRooms() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for id, room := range s.rooms {
-		if len(room.clients) == 0 {
-			close(room.broadcast)
-			close(room.register)
-			close(room.unregister)
-			delete(s.rooms, id)
-			log.Printf("Cleaned up empty room: %s", id)
+func (r *Room) sendHeartbeat() {
+	heartbeat, _ := json.Marshal(map[string]interface{}{
+		"type": "heartbeat",
+	})
+	
+	for client := range r.clients {
+		err := client.WriteMessage(websocket.PingMessage, heartbeat)
+		if err != nil {
+			r.unregister <- client
 		}
 	}
 }
 
-func main() {
-	server := NewServer()
+func (s *Server) cleanupEmptyRooms() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
+	now := time.Now()
+	for id, room := range s.rooms {
+		if len(room.clients) == 0 || now.Sub(room.lastActivity) > s.config.RoomTimeout {
+			close(room.broadcast)
+			close(room.register)
+			close(room.unregister)
+			close(room.done)
+			delete(s.rooms, id)
+			s.metrics.mu.Lock()
+			s.metrics.activeRooms--
+			s.metrics.mu.Unlock()
+			log.Printf("Cleaned up room: %s", id)
+		}
+	}
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	close(s.shutdown)
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	for _, room := range s.rooms {
+		close(room.done)
+		for client := range room.clients {
+			client.WriteControl(
+				websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutdown"),
+				time.Now().Add(time.Second),
+			)
+			client.Close()
+		}
+	}
+	return nil
+}
+
+func main() {
+	config := Config{
+		Port:            "8080",
+		MaxClients:      2,
+		CleanupInterval: 5 * time.Minute,
+		RoomTimeout:     30 * time.Minute,
+		ReadTimeout:     10 * time.Second,
+		WriteTimeout:    10 * time.Second,
+	}
+	
+	server := NewServer(config)
+	
+	// Setup HTTP server
+	srv := &http.Server{
+		Addr:         "0.0.0.0:" + config.Port,
+		ReadTimeout:  config.ReadTimeout,
+		WriteTimeout: config.WriteTimeout,
+	}
+
+	// Setup routes
+	mux := http.NewServeMux()
+	
+	// Add basic metrics endpoint
+	mux.HandleFunc("/metrics", server.handleMetrics)
+	
+	// Add health check endpoint
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	
+	// Setup static file server
 	fileServer := http.FileServer(http.FS(server.distFS))
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := server.distFS.Open(strings.TrimPrefix(r.URL.Path, "/"))
 		if err != nil {
 			r.URL.Path = "/"
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+	
+	mux.HandleFunc("/ws", server.handleConnections)
+	
+	srv.Handler = mux
 
-	http.HandleFunc("/ws", server.handleConnections)
-
-	log.Print("Server starting on 0.0.0.0:8080")
-	err := http.ListenAndServe("0.0.0.0:8080", nil)
-	if err != nil {
-		log.Fatalf("Error starting server: %v", err)
-	}
-
-	// Periodically clean up empty rooms
+	// Start cleanup goroutine
 	go func() {
+		ticker := time.NewTicker(config.CleanupInterval)
+		defer ticker.Stop()
+		
 		for {
-			time.Sleep(5 * time.Minute)
-			server.cleanupEmptyRooms()
+			select {
+			case <-ticker.C:
+				server.cleanupEmptyRooms()
+			case <-server.shutdown:
+				return
+			}
 		}
 	}()
+
+	// Start server
+	go func() {
+		log.Printf("Server starting on 0.0.0.0:%s", config.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Error starting server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	// Graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Error during server shutdown: %v", err)
+	}
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("Error during HTTP server shutdown: %v", err)
+	}
+	
+	log.Println("Server stopped gracefully")
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	s.metrics.mu.Lock()
+	defer s.metrics.mu.Unlock()
+	
+	metrics := map[string]interface{}{
+		"active_rooms":    s.metrics.activeRooms,
+		"active_clients":  s.metrics.activeClients,
+		"messages_total":  s.metrics.messagesTotal,
+		"error_count":     s.metrics.errorCount,
+	}
+	
+	json.NewEncoder(w).Encode(metrics)
 }
