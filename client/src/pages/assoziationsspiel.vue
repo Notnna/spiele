@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { toast, Toaster } from 'vue-sonner'
 import DonateButton from '../components/DonateButton.vue'
 
 const currentCategory = ref('')
@@ -71,6 +72,7 @@ function joinRoom() {
   socket.onopen = () => {
     console.log('Connected to server') // eslint-disable-line no-console
     isConnected.value = true
+    toast.success('Verbunden!')
     newCategory()
   }
 
@@ -105,6 +107,7 @@ function joinRoom() {
   socket.onclose = (event) => {
     console.log(`WebSocket is closed now. Code: ${event.code}`) // eslint-disable-line no-console
     isConnected.value = false
+    toast.error('Verbindung getrennt!')
   }
 
   socket.onerror = (error) => {
@@ -120,6 +123,7 @@ function joinRoom() {
 
 function handleSubmit() {
   streak.value = Math.min(streak.value + 1, 5)
+  toast.success('Richtige Antwort!')
 
   socket.send(JSON.stringify({
     type: 'streak',
@@ -131,6 +135,7 @@ function handleSubmit() {
 
 function handleReveal() {
   btnRevealed.value = true
+  toast.info('Antwort aufgedeckt')
   socket.send(JSON.stringify({
     type: 'reveal',
   }))
@@ -138,6 +143,7 @@ function handleReveal() {
 
 function resetStreak() {
   streak.value = 0
+  toast.error('Falsche Antwort!')
 
   socket.send(JSON.stringify({
     type: 'resetStreak',
@@ -152,13 +158,15 @@ function nextCategory() {
 
 function copyRoomID() {
   navigator.clipboard.writeText(roomID.value)
+  toast.success('Room ID kopiert!')
 }
 </script>
 
 <template>
   <div class="min-h-screen flex items-center justify-center bg-[#0a0a2a] text-white font-sans">
     <DonateButton />
-    
+    <Toaster position="bottom-right" theme="dark" />
+
     <div v-if="inRoom" class="absolute left-0 top-0 p-4">
       <div class="relative flex items-center gap-2 border-2 border-[#3a3a6a] rounded-xl bg-[#1a1a4a] p-2">
         <span class="font-light font-mono">
