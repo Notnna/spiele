@@ -87,9 +87,6 @@ importers:
       vitest:
         specifier: ^2.1.6
         version: 2.1.6(@types/node@22.10.0)(jiti@2.4.0)(jsdom@25.0.1)(tsx@4.19.2)(yaml@2.6.1)
-      vue-tsc:
-        specifier: ^2.1.10
-        version: 2.1.10(typescript@5.7.2)
 
 packages:
 
@@ -3932,6 +3929,7 @@ snapshots:
       '@volar/language-core': 2.4.10
       path-browserify: 1.0.1
       vscode-uri: 3.0.8
+    optional: true
 
   '@vue-macros/api@0.13.0(rollup@4.27.4)(vue@3.5.13(typescript@5.7.2))':
     dependencies:
@@ -6329,7 +6327,8 @@ snapshots:
       - tsx
       - yaml
 
-  vscode-uri@3.0.8: {}
+  vscode-uri@3.0.8:
+    optional: true
 
   vue-component-type-helpers@2.1.10: {}
 
@@ -6363,6 +6362,7 @@ snapshots:
       '@vue/language-core': 2.1.10(typescript@5.7.2)
       semver: 7.6.3
       typescript: 5.7.2
+    optional: true
 
   vue@3.5.13(typescript@5.7.2):
     dependencies:
